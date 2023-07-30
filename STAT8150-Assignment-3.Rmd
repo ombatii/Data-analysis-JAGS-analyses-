@@ -1,0 +1,178 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+# Question 1 (10 marks)
+The data set olympicbutterfly.csv contains the winning time in seconds for the
+men’s and women’s 100m butterfly race for the Olympics from 1964 through 2016.
+Let yi and xi denote the winning time and year for the ith Olympics. In addition,
+let wi denote an indicator variable that is 1 for the women’s race and 0 for the men’s
+race.
+Consider the regression model
+Yi ∼ Normal(μi, σ2), μi = β0 + β1(xi − 1964) + β2wi.
+(a) (2 marks) Interpret the meaning in terms of the winning time for i) β0 + β2;
+ii) β0 + 10β1 + β2, respectively.
+
+
+(b) (4 marks) Suppose the regression parameters β0, β1, β2 and the precision pa-
+rameter 1/σ2 are assigned weakly informative priors. Using JAGS, sample 5000
+draws from the joint posterior distribution of all parameters.
+## Import packages
+```{r}
+library(rjags)
+library(tidymodels)
+library(coda)
+```
+
+## Import dataset
+```{r}
+data_1 <- olympicbutterfly
+data_1
+```
+## Simple Data Exploration
+```{r}
+data_1 %>%  skimr::skim()
+```
+## Define the values for the simulation
+```{r}
+#Values for simulation
+N <- length(data_1$Year)
+N
+```
+
+
+## Data Preparation
+```{r}
+x <- data_1$Year - 1964
+w <- ifelse(data_1$Gender == "Women", 1, 0)
+y <- data_1$Time
+```
+
+
+## Combine data for JAGS input
+```{r}
+jags_data <- list("N" =N ,"x"=x, "w" =w, "y"= y)
+jags_data
+```
+
+
+```{r}
+#Initial values
+inits <- list( d = 0, tau = 1, delta = c (0,0,0,0,0, 0,0), mu = c (0,0,0,0,0, 0,0) )
+```
+
+## Embed the BUGS model 
+# Define the JAGS model
+
+```{r}
+cat("
+model {
+  for (i in 1:N) {
+    y[i] ~ dnorm(mu[i], tau)
+    mu[i] <- beta[1] + beta[2] * x[i] + beta[3] * w[i]
+  }
+
+  beta[1] ~ dnorm(0, 0.001)  # Weakly informative priors
+  beta[2] ~ dnorm(0, 0.001)
+  beta[3] ~ dnorm(0, 0.001)
+  tau ~ dgamma(0.001, 0.001)  # Weakly informative prior for precision 
+
+ 
+}
+", file="model8.txt")
+```
+
+
+## Specify the JAGS model
+```{r}
+## Set up the JAGS model
+jags.m <- jags.model( file = "model8.txt", data= jags_data, inits=inits, n.chains=1, n.adapt=5000 )
+```
+
+## Specify the parameters of interest.
+```{r}
+## specify parameters to be monitored
+params <- c("d", "OR", "tau")
+```
+
+## Run JAGS model and save the samples
+```{r}
+## run JAGS and save posterior samples
+samps <- coda.samples( jags.m, params, n.iter=10000 )
+```
+
+## Use a burn-in of 5,000 iterations
+```{r}
+## summarize posterior samples
+summary(samps)
+```
+
+## 
+```{r}
+summary(window(samps, start=5001))  # Burn in of 5000. Start at 5001.
+```
+
+## Plot the posterior distribution
+```{r}
+plot(samps)
+```
+
+
+(c) (4 marks) Using sample draws from part (b), construct 90% interval estimates
+for each of the regression coefficients. Based on your work, describe how the
+mean winning time in the butterfly race has changed over time. In addition,
+describe how the men’s times differ from the women’s times
+
+
+## Question 2(c)
+```{r}
+gibbs_sampler <- function(iterations, a, b) {
+  Y <- rep(0, iterations)
+  lambda <- rep(0, iterations)
+  
+  # Initial values
+  Y[1] <- rpois(1, lambda[1])
+  lambda[1] <- rgamma(1, a, b)
+  
+  for (i in 2:iterations) {
+    # Sample Y from the conditional distribution Y|lambda
+    Y[i] <- rpois(1, lambda[i - 1])
+    
+    # Sample lambda from the conditional distribution lambda|Y
+    lambda[i] <- rgamma(1, a + Y[i], b + 1)
+  }
+  
+  return(list(Y = Y, lambda = lambda))
+}
+```
+
+## Question 2(d)
+(d) (2 marks) Use the R function in part (c) to run 1000 iterations of Gibbs
+sampling for the case where a = 3 and b = 3. Report your simulated draw of
+Y and corresponding relative frequencies.
+```{r}
+# Run Gibbs sampling for 1000 iterations for the case where a = 3 and b = 3
+outcome <- gibbs_sampler(iterations = 1000, a = 3, b = 3)
+
+# Simulated draw of Y
+Y_draw <- outcome$Y
+
+# Relative frequencies of Y
+relative_frequencies <- table(Y_draw) / sum(table(Y_draw))
+relative_frequencies
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
